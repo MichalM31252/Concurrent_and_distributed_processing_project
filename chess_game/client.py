@@ -2,7 +2,7 @@ from __future__ import annotations
 import socket
 import threading
 from typing import Callable, Any, Dict, Optional
-from .common import send_message, recv_message, ConnectionClosed
+from common import send_message, recv_message, ConnectionClosed
 
 class ChessNetworkClient:
     def __init__(self, host: str = '127.0.0.1', port: int = 5000) -> None:
@@ -87,3 +87,32 @@ class ChessNetworkClient:
             if msg['type'] == 'game_over':
                 if self.on_game_over:
                     self.on_game_over(info_text)
+
+# This fragment is for testing the client without a UI, it connects to the server and allows sending moves via console input
+if __name__ == '__main__':
+    host_ip = input('Server IP [127.0.0.1]: ').strip() or '127.0.0.1'
+    client = ChessNetworkClient(host=host_ip)
+    client.on_state_update = lambda state: print(f"\n[New State] Turn: {state.get('turn')} | Status: {state.get('status')}")
+    client.on_error = lambda err: print(f"\n[Error] {err}")
+    client.on_info = lambda info: print(f"\n[Info] {info}")
+    client.on_game_over = lambda reason: print(f"\n[Game Over] {reason}")
+    client.on_connection_lost = lambda msg: print(f"\n[Connection Lost] {msg}")
+    try:
+        client.connect()
+        print(f"Connected! Your color is: {client.color.upper()}")
+        
+        while client.is_running:
+            move = input("\nEnter your move (e.g., 'e2 e4') or 'q' to quit: \n")
+            if move.lower() == 'q':
+                break
+            
+            parts = move.split()
+            if len(parts) == 2:
+                client.send_move(parts[0], parts[1])
+            elif move:
+                print("Invalid format! Please enter your move like this: e2 e4")
+                
+    except Exception as e:
+        print(f"Connection error: {e}")
+    finally:
+        client.disconnect()
