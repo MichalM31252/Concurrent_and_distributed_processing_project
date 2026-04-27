@@ -181,7 +181,50 @@ class ChessGame:
             if not test.in_check(p.color):
                 legal.append((nr, nc))
         return legal
-def make_move(self, from_pos: str, to_pos: str, promotion: Optional[str] = None):
+    # we check if we have any legal moves to check if there is a checkmate or stalemate
+    def has_any_legal_move(self, color: str) -> bool:
+        for r in range(8):
+            for c in range(8):
+                p = self.board[r][c]
+                if p and p.color == color and self.legal_moves(r, c):
+                    return True
+        return False
+     # special rules for en passant, castling and promotion rules
+    def _apply_unchecked(self, src, dst, promotion='Q'):
+        r1, c1 = src
+        r2, c2 = dst
+        piece = self.board[r1][c1]
+        assert piece is not None
+        if piece.kind == 'P' and self.en_passant_target == (r2, c2) and self.board[r2][c2] is None and c1 != c2:
+            capture_row = r2 + (1 if piece.color == 'white' else -1)
+            self.board[capture_row][c2] = None
+        self.board[r2][c2] = piece
+        self.board[r1][c1] = None
+        if piece.kind == 'K' and abs(c2 - c1) == 2:
+            if c2 == 6:
+                rook = self.board[r2][7]
+                self.board[r2][5] = rook
+                self.board[r2][7] = None
+            else:
+                rook = self.board[r2][0]
+                self.board[r2][3] = rook
+                self.board[r2][0] = None
+        if piece.kind == 'P' and (r2 == 0 or r2 == 7):
+            self.board[r2][c2] = Piece(piece.color, promotion or 'Q')
+        if piece.kind == 'P' and abs(r2 - r1) == 2:
+            self.en_passant_target = ((r1 + r2) // 2, c1)
+        else:
+            self.en_passant_target = None
+        if piece.kind == 'K':
+            self.castling[piece.color]['K'] = False
+            self.castling[piece.color]['Q'] = False
+        if piece.kind == 'R':
+            if (r1, c1) == (7, 0): self.castling['white']['Q'] = False
+            if (r1, c1) == (7, 7): self.castling['white']['K'] = False
+            if (r1, c1) == (0, 0): self.castling['black']['Q'] = False
+            if (r1, c1) == (0, 7): self.castling['black']['K'] = False
+     # main function in which we make a move and check correctness if the move is legal and if the game is over
+    def make_move(self, from_pos: str, to_pos: str, promotion: Optional[str] = None):
         if self.winner:
             return False, 'Game already finished.'
         try:
@@ -197,3 +240,18 @@ def make_move(self, from_pos: str, to_pos: str, promotion: Optional[str] = None)
         legal = self.legal_moves(r1, c1)
         if (r2, c2) not in legal:
             return False, 'Illegal move. The move would break chess rules or leave king in check.'
+        self._apply_unchecked((r1, c1), (r2, c2), promotion or 'Q')
+        self.turn = 'black' if self.turn == 'white' else 'white'
+        if self.in_check(self.turn):
+            if not self.has_any_legal_move(self.turn):
+                self.winner = 'white' if self.turn == 'black' else 'black'
+                self.status = f'Checkmate. {self.winner.capitalize()} wins.'
+            else:
+                self.status = f'{self.turn.capitalize()} is in check.'
+        else:
+            if not self.has_any_legal_move(self.turn):
+                self.winner = 'draw'
+                self.status = 'Stalemate. Draw.'
+            else:
+                self.status = f'{self.turn.capitalize()} to move.'
+        return True, self.status
