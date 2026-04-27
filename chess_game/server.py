@@ -2,7 +2,7 @@ from __future__ import annotations
 import socket
 import threading
 from typing import Dict
-from .common import send_message, recv_message, ConnectionClosed
+from common import send_message, recv_message, ConnectionClosed
 
 # Mock of the chess game logic - just to keep server running without game logic yet
 class MockGame:
@@ -45,7 +45,7 @@ class ChessServer:
             self.clients[color] = client_sock           
             threading.Thread(target=self.handle_client, args=(client_sock, color), daemon=True).start()
             print(f'{addr} connected as {color}')
-            send_message(client_sock, {'type': 'welcome', 'color': color})
+            send_message(client_sock, {'type': 'welcome', 'color': color, 'state': self.game.serialize()})
             
         self.broadcast({'type': 'info', 'message': 'Both players connected. Game started.'})
 
