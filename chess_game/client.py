@@ -3,7 +3,7 @@ import socket
 import threading
 import tkinter as tk
 from tkinter import messagebox, simpledialog
-from chess_game.common import send_message, recv_message, ConnectionClosed
+from common import send_message, recv_message, ConnectionClosed
 
 LIGHT = '#f0d9b5'
 DARK = '#b58863'
