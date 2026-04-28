@@ -1,118 +1,167 @@
 from __future__ import annotations
 import socket
 import threading
-from typing import Callable, Any, Dict, Optional
-from common import send_message, recv_message, ConnectionClosed
+import tkinter as tk
+from tkinter import messagebox, simpledialog
+from chess_game.common import send_message, recv_message, ConnectionClosed
 
-class ChessNetworkClient:
+LIGHT = '#f0d9b5'
+DARK = '#b58863'
+SELECTED = '#f6f669'
+LEGAL = '#7ec850'
+
+
+class ChessClient:
     def __init__(self, host: str = '127.0.0.1', port: int = 5000) -> None:
         self.host = host
         self.port = port
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        self.is_running = False
-        self.color: Optional[str] = None
-        self.state: Optional[Dict[str, Any]] = None
-
-        # Callbacks for UI or other components to react to game events
-        self.on_state_update: Optional[Callable[[Dict[str, Any]], None]] = None
-        self.on_error: Optional[Callable[[str], None]] = None
-        self.on_info: Optional[Callable[[str], None]] = None
-        self.on_game_over: Optional[Callable[[str], None]] = None
-        self.on_connection_lost: Optional[Callable[[str], None]] = None
-
-    # Method to connect to the server, it also starts the listener thread to receive messages from the server
-    def connect(self) -> None:
-        self.sock.connect((self.host, self.port))
+        self.sock.connect((host, port))
         welcome = recv_message(self.sock)
         self.color = welcome['color']
         self.state = welcome['state']
-        self.is_running = True
+        self.selected = None
+        self.root = tk.Tk()
+        self.root.title(f'Network Chess - {self.color}')
+        self.root.protocol('WM_DELETE_WINDOW', self.on_close)
+        self.status_var = tk.StringVar(value='Connecting...')
+        self.info_var = tk.StringVar(value='')
+        self.buttons = []
+        self._build_ui()
+        self.apply_state(self.state)
         self.listener = threading.Thread(target=self.listen_server, daemon=True)
         self.listener.start()
 
-    # Method to send a move to the server, it also handles disconnections while sending
-    def send_move(self, from_pos: str, to_pos: str, promotion: Optional[str] = None) -> None:
-        if not self.is_running:
-            return
-        try:
-            send_message(self.sock, {
-                'type': 'move', 
-                'from_pos': from_pos, 
-                'to_pos': to_pos, 
-                'promotion': promotion
-            })
-        except OSError:
-            if self.on_connection_lost:
-                self.on_connection_lost('Connection lost while sending move.')
+    def _build_ui(self):
+        board_frame = tk.Frame(self.root)
+        board_frame.pack(padx=10, pady=10)
+        for r in range(8):
+            row = []
+            for c in range(8):
+                btn = tk.Button(board_frame, width=4, height=2, font=('Arial', 20), command=lambda rr=r, cc=c: self.on_square(rr, cc))
+                btn.grid(row=r, column=c)
+                row.append(btn)
+            self.buttons.append(row)
+        tk.Label(self.root, textvariable=self.status_var, font=('Arial', 12, 'bold')).pack(pady=(0, 4))
+        tk.Label(self.root, textvariable=self.info_var, wraplength=520, justify='center').pack(padx=10, pady=(0, 10))
 
-    # Method to disconnect from the server
-    def disconnect(self) -> None:
-        self.is_running = False
+    def on_square(self, r, c):
+        board = self.state['board']
+        piece = board[r][c]
+        my_turn = self.state['turn'] == self.color and not self.state.get('winner')
+        if not my_turn:
+            self.info_var.set('It is not your turn.')
+            return
+        if self.selected is None:
+            if piece is None:
+                self.info_var.set('Select one of your own pieces first.')
+                return
+            if piece['color'] != self.color:
+                self.info_var.set('You can only move your own pieces.')
+                return
+            self.selected = (r, c)
+            self.redraw()
+            self.info_var.set('Now select a destination square.')
+            return
+        if self.selected == (r, c):
+            self.selected = None
+            self.redraw()
+            self.info_var.set('Selection cleared.')
+            return
+        from_pos = self.idx_to_pos(*self.selected)
+        to_pos = self.idx_to_pos(r, c)
+        promotion = None
+        sel_piece = board[self.selected[0]][self.selected[1]]
+        if sel_piece and sel_piece['kind'] == 'P':
+            from_r, from_c = self.selected
+            target_piece = board[r][c]
+            is_valid_promotion_attempt = False
+            if sel_piece['color'] == 'white' and from_r == 1 and r == 0:
+                if from_c == c and target_piece is None:
+                    is_valid_promotion_attempt = True
+                elif abs(from_c - c) == 1 and target_piece is not None:
+                    is_valid_promotion_attempt = True
+                    
+            elif sel_piece['color'] == 'black' and from_r == 6 and r == 7:
+                if from_c == c and target_piece is None:
+                    is_valid_promotion_attempt = True
+                elif abs(from_c - c) == 1 and target_piece is not None:
+                    is_valid_promotion_attempt = True
+
+            if is_valid_promotion_attempt:
+                promotion = simpledialog.askstring('Promotion', 'Promote to (Q/R/B/N):', initialvalue='Q') or 'Q'
+                promotion = promotion.upper()
+                if promotion not in {'Q', 'R', 'B', 'N'}:
+                    self.info_var.set('Invalid promotion choice.')
+                    self.selected = None
+                    self.redraw()
+                    return
+        try:
+            send_message(self.sock, {'type': 'move', 'from_pos': from_pos, 'to_pos': to_pos, 'promotion': promotion})
+        except OSError:
+            self.info_var.set('Connection lost while sending move.')
+        self.selected = None
+        self.redraw()
+
+    def idx_to_pos(self, r, c):
+        return f"{'abcdefgh'[c]}{8-r}"
+
+    def listen_server(self):
+        try:
+            while True:
+                msg = recv_message(self.sock)
+                self.root.after(0, self.handle_message, msg)
+        except (ConnectionClosed, OSError):
+            self.root.after(0, lambda: self.connection_lost('Connection to server was lost.'))
+
+    def handle_message(self, msg):
+        if 'state' in msg:
+            self.apply_state(msg['state'])
+        if msg['type'] == 'error':
+            self.info_var.set(msg['message'])
+        elif msg['type'] in ('state', 'info', 'game_over'):
+            self.info_var.set(msg.get('message') or self.state.get('status', ''))
+            if msg['type'] == 'game_over':
+                messagebox.showinfo('Game over', self.state['status'])
+
+    def apply_state(self, state):
+        self.state = state
+        turn_text = f"You are {self.color}. Turn: {state['turn']}"
+        if state.get('winner'):
+            turn_text += f" | Result: {state['status']}"
+        self.status_var.set(turn_text)
+        self.redraw()
+
+    def redraw(self):
+        board = self.state['board']
+        for r in range(8):
+            for c in range(8):
+                base = LIGHT if (r + c) % 2 == 0 else DARK
+                if self.selected == (r, c):
+                    base = SELECTED
+                btn = self.buttons[r][c]
+                piece = board[r][c]
+                btn.configure(text='' if piece is None else piece['symbol'], bg=base, activebackground=base)
+
+    def connection_lost(self, text):
+        self.info_var.set(text)
+        messagebox.showwarning('Disconnected', text)
+
+    def on_close(self):
         try:
             send_message(self.sock, {'type': 'quit'})
-        except (OSError, ConnectionClosed):
+        except OSError:
             pass
         try:
             self.sock.close()
         except OSError:
             pass
+        self.root.destroy()
 
-    # Method that runs in a background thread to listen for messages from the server, it also handles disconnections while receiving
-    def listen_server(self) -> None:
-        try:
-            while self.is_running:
-                msg = recv_message(self.sock)
-                self.handle_message(msg)
-        except (ConnectionClosed, OSError):
-            if self.is_running and self.on_connection_lost:
-                self.on_connection_lost('Connection to server was lost.')
+    def run(self):
+        self.root.mainloop()
 
-    # Method to handle incoming messages from the server, it updates the game state
-    def handle_message(self, msg: Dict[str, Any]) -> None:
-        if 'state' in msg:
-            self.state = msg['state']
-            if self.on_state_update:
-                self.on_state_update(self.state)
 
-        if msg['type'] == 'error':
-            if self.on_error:
-                self.on_error(msg['message'])
-
-        elif msg['type'] in ('state', 'info', 'game_over'):
-            info_text = msg.get('message') or (self.state.get('status', '') if self.state else '')
-            
-            if self.on_info and info_text:
-                self.on_info(info_text)
-                
-            if msg['type'] == 'game_over':
-                if self.on_game_over:
-                    self.on_game_over(info_text)
-
-# This fragment is for testing the client without a UI, it connects to the server and allows sending moves via console input
 if __name__ == '__main__':
-    host_ip = input('Server IP [127.0.0.1]: ').strip() or '127.0.0.1'
-    client = ChessNetworkClient(host=host_ip)
-    client.on_state_update = lambda state: print(f"\n[New State] Turn: {state.get('turn')} | Status: {state.get('status')}")
-    client.on_error = lambda err: print(f"\n[Error] {err}")
-    client.on_info = lambda info: print(f"\n[Info] {info}")
-    client.on_game_over = lambda reason: print(f"\n[Game Over] {reason}")
-    client.on_connection_lost = lambda msg: print(f"\n[Connection Lost] {msg}")
-    try:
-        client.connect()
-        print(f"Connected! Your color is: {client.color.upper()}")
-        
-        while client.is_running:
-            move = input("\nEnter your move (e.g., 'e2 e4') or 'q' to quit: \n")
-            if move.lower() == 'q':
-                break
-            
-            parts = move.split()
-            if len(parts) == 2:
-                client.send_move(parts[0], parts[1])
-            elif move:
-                print("Invalid format! Please enter your move like this: e2 e4")
-                
-    except Exception as e:
-        print(f"Connection error: {e}")
-    finally:
-        client.disconnect()
+    host = input('Server IP [127.0.0.1]: ').strip() or '127.0.0.1'
+    ChessClient(host=host).run()
