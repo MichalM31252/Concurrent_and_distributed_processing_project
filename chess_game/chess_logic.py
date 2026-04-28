@@ -27,7 +27,7 @@ class Piece:
 
     def symbol(self) -> str:
         symbols = {
-            ('white', 'K'): '♔', ('white', 'Q'): '♕   ', ('white', 'R'): '♖', ('white', 'B'): '♗', ('white', 'N'): '♘', ('white', 'P'): '♙',
+            ('white', 'K'): '♔', ('white', 'Q'): '♕', ('white', 'R'): '♖', ('white', 'B'): '♗', ('white', 'N'): '♘', ('white', 'P'): '♙',
             ('black', 'K'): '♚', ('black', 'Q'): '♛', ('black', 'R'): '♜', ('black', 'B'): '♝', ('black', 'N'): '♞', ('black', 'P'): '♟',
         }
         return symbols[(self.color, self.kind)]
