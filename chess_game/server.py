@@ -3,6 +3,7 @@ import socket
 import threading
 from typing import Dict
 from common import send_message, recv_message, ConnectionClosed
+from chess_logic import ChessGame
 
 # Mock of the chess game logic - just to keep server running without game logic yet
 class MockGame:
@@ -29,7 +30,7 @@ class ChessServer:
         self.server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         self.clients: Dict[str, socket.socket] = {}
         self.lock = threading.Lock()
-        self.game = MockGame() # Mock until we implement actual game logic
+        self.game = ChessGame() # Initialize the actual chess game
         self.running = True
 
     # Main loop that accepts clients and manages the game state
