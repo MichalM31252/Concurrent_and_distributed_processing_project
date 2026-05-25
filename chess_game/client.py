@@ -29,6 +29,7 @@ class ChessClient:
         self.buttons = []
         self._build_ui()
         self.apply_state(self.state)
+        self.update_clocks_loop()
         self.listener = threading.Thread(target=self.listen_server, daemon=True)
         self.listener.start()
 
@@ -44,6 +45,7 @@ class ChessClient:
             self.buttons.append(row)
         tk.Label(self.root, textvariable=self.status_var, font=('Arial', 12, 'bold')).pack(pady=(0, 4))
         tk.Label(self.root, textvariable=self.info_var, wraplength=520, justify='center').pack(padx=10, pady=(0, 10))
+        self.root.bind('<space>', self.hit_clock)
 
     def on_square(self, r, c):
         board = self.state['board']
@@ -105,6 +107,25 @@ class ChessClient:
 
     def idx_to_pos(self, r, c):
         return f"{'abcdefgh'[c]}{8-r}"
+    
+    def hit_clock(self, event=None):
+        try:
+            send_message(self.sock, {'type': 'clock_hit'})
+        except OSError:
+            self.info_var.set('Connection lost while hitting the clock.')
+
+    def update_clocks_loop(self):
+        if self.state and self.state.get('game_started') and not self.state.get('winner') and 'clocks' in self.state:
+            ticking_color = self.state.get('clock_waiting_for')
+            if not ticking_color:
+                ticking_color = self.state.get('turn')
+                
+            if ticking_color and ticking_color in self.state['clocks']:
+                if self.state['clocks'][ticking_color] > 0:
+                    self.state['clocks'][ticking_color] -= 1
+                    self.apply_state(self.state)
+                    
+        self.root.after(1000, self.update_clocks_loop)
 
     def listen_server(self):
         try:
@@ -126,7 +147,11 @@ class ChessClient:
 
     def apply_state(self, state):
         self.state = state
-        turn_text = f"You are {self.color}. Turn: {state['turn']}"
+        clocks = state.get('clocks', {'white': 60, 'black': 60})
+        w_min, w_sec = divmod(clocks.get('white', 60), 60)
+        b_min, b_sec = divmod(clocks.get('black', 60), 60)
+        time_text = f"[White: {int(w_min):02d}:{int(w_sec):02d}] [Black: {int(b_min):02d}:{int(b_sec):02d}]"
+        turn_text = f"You are {self.color} | Turn: {state['turn']} | {time_text}"
         if state.get('winner'):
             turn_text += f" | Result: {state['status']}"
         self.status_var.set(turn_text)
