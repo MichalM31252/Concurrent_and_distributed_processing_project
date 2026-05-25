@@ -67,6 +67,10 @@ class ChessClient:
 
     
     def on_square(self, r, c):
+
+        if self.color == 'black':
+            r = 7 - r
+            c = 7 - c
         board = self.state['board']
         piece = board[r][c]
 
@@ -172,25 +176,33 @@ class ChessClient:
     
     def redraw(self):
         board = self.state['board']
-
+        
         for r in range(8):
             for c in range(8):
-                base = LIGHT if (r + c) % 2 == 0 else DARK
 
-                if self.selected == (r, c):
+                # 🔥 FLIP dla czarnych
+                if self.color == 'black':
+                    rr = 7 - r
+                    cc = 7 - c
+                else:
+                    rr = r
+                    cc = c
+
+                base = LIGHT if (rr + cc) % 2 == 0 else DARK
+
+                if self.selected == (rr, cc):
                     base = SELECTED
 
-                
-                if (r, c) in self.legal_moves:
+                if (rr, cc) in self.legal_moves:
                     base = LEGAL
 
-                piece = board[r][c]
+                piece = board[rr][cc]
+
                 self.buttons[r][c].configure(
                     text='' if piece is None else piece['symbol'],
                     bg=base,
                     activebackground=base
                 )
-
     
     def idx_to_pos(self, r, c):
         return f"{'abcdefgh'[c]}{8-r}"
