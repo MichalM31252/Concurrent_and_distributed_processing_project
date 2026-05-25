@@ -194,6 +194,47 @@ class ChessServer:
                             if self.game.winner:
                                 self.running = False
                                 self.broadcast({'type': 'game_over', 'reason': 'finished', 'state': self.get_full_state()})
+                    
+                    elif message.get('type') == 'get_moves':
+                        r = message.get('r')
+                        c = message.get('c')
+
+                        if r is None or c is None:
+                            send_message(sock, {
+                                'type': 'error',
+                                'message': 'Invalid coordinates.',
+                                'state': self.get_full_state()
+                            })
+                            continue
+
+                        piece = self.game.board[r][c]
+
+                        if piece is None:
+                            send_message(sock, {
+                                'type': 'moves',
+                                'from': (r, c),
+                                'moves': [],
+                                'state': self.get_full_state()
+                            })
+                            continue
+
+                        if piece.color != color:
+                            send_message(sock, {
+                                'type': 'moves',
+                                'from': (r, c),
+                                'moves': [],
+                                'state': self.get_full_state()
+                            })
+                            continue
+
+                        moves = self.game.legal_moves(r, c)
+
+                        send_message(sock, {
+                            'type': 'moves',
+                            'from': (r, c),
+                            'moves': moves,
+                            'state': self.get_full_state()
+                        })
 
                     elif message.get('type') == 'clock_hit':
                         if self.clock_waiting_for == color:
