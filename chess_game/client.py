@@ -230,7 +230,15 @@ class ChessClient:
 
     def apply_state(self, state):
         self.state = state
-        self.status_var.set(f"You are {self.color} | Turn: {state['turn']}")
+        clocks = state.get('clocks', {'white': 60, 'black': 60})
+        w_min, w_sec = divmod(clocks.get('white', 60), 60)
+        b_min, b_sec = divmod(clocks.get('black', 60), 60)
+        time_text = f"[White: {int(w_min):02d}:{int(w_sec):02d}] [Black: {int(b_min):02d}:{int(b_sec):02d}]"
+        
+        turn_text = f"You are {self.color} | Turn: {state['turn']} | {time_text}"
+        if state.get('winner'):
+            turn_text += f" | Result: {state['status']}"
+        self.status_var.set(turn_text)
         self.root.after(0, self.redraw)
 
     def connection_lost(self, text):
